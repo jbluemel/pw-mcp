@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config();
@@ -11,13 +11,13 @@ export const pool = new Pool({
   database: process.env.DB_NAME || 'dbt_dev',
   user: process.env.DB_USER || 'dbt_user',
   password: process.env.DB_PASSWORD,
-  max: 10, // Maximum number of connections in the pool
-  idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+  max: 10,
+  idleTimeoutMillis: 30000,
 });
 
-// Test the connection
+// Test the connection (using console.error so it doesn't interfere with stdio)
 pool.on('connect', () => {
-  console.log('✓ Connected to PostgreSQL database');
+  console.error('✓ Connected to PostgreSQL database');
 });
 
 pool.on('error', (err) => {
