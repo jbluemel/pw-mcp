@@ -25,7 +25,7 @@ export const GetAuctionItemsInputSchema = z.object({
   date_to: z.string().optional().describe('End date (ISO format: 2024-12-31)'),
   min_price: z.number().optional().describe('Minimum hammer price'),
   max_price: z.number().optional().describe('Maximum hammer price'),
-  limit: z.number().min(1).max(100).default(20).describe('Number of results (max 100)'),
+  limit: z.number().min(1).default(20).describe('Number of results (no max limit)'),
   offset: z.number().min(0).default(0).describe('Offset for pagination'),
 });
 
