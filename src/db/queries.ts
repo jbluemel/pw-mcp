@@ -6,29 +6,28 @@ export async function getAuctionItems(params: GetAuctionItemsInput): Promise<Auc
   const values: any[] = [];
   let paramIndex = 1;
 
-  // Build WHERE clause based on provided filters
   if (params.category) {
-    conditions.push(`category = $${paramIndex++}`);
+    conditions.push(`taxonomy_category = $${paramIndex++}`);
     values.push(params.category);
   }
 
   if (params.date_from) {
-    conditions.push(`auctiondate >= $${paramIndex++}`);
+    conditions.push(`auction_date >= $${paramIndex++}`);
     values.push(params.date_from);
   }
 
   if (params.date_to) {
-    conditions.push(`auctiondate <= $${paramIndex++}`);
+    conditions.push(`auction_date <= $${paramIndex++}`);
     values.push(params.date_to);
   }
 
   if (params.min_price !== undefined) {
-    conditions.push(`hammer >= $${paramIndex++}`);
+    conditions.push(`hammer_price >= $${paramIndex++}`);
     values.push(params.min_price);
   }
 
   if (params.max_price !== undefined) {
-    conditions.push(`hammer <= $${paramIndex++}`);
+    conditions.push(`hammer_price <= $${paramIndex++}`);
     values.push(params.max_price);
   }
 
@@ -36,12 +35,14 @@ export async function getAuctionItems(params: GetAuctionItemsInput): Promise<Auc
 
   const query = `
     SELECT 
-      unique_id, auctiondate, icn, model, category, 
-      hammer, contract_price,
-      seller_service_fee, lot_fee, power_washing, decal_removal, total_fees
-    FROM itemsbasics
+      item_id, auction_date, make, model, taxonomy_category,
+      hammer_price, contract_price, buyer_premium,
+      seller_service_fee, lot_fee,
+      item_city, item_state, item_region_name,
+      business_category, tsm_first_name, tsm_last_name
+    FROM items
     ${whereClause}
-    ORDER BY auctiondate DESC
+    ORDER BY auction_date DESC
     LIMIT $${paramIndex++} OFFSET $${paramIndex++}
   `;
 
@@ -49,4 +50,41 @@ export async function getAuctionItems(params: GetAuctionItemsInput): Promise<Auc
 
   const result = await pool.query(query, values);
   return result.rows;
+}
+
+export async function getItemCount(params: Partial<GetAuctionItemsInput>): Promise<number> {
+  const conditions: string[] = [];
+  const values: any[] = [];
+  let paramIndex = 1;
+
+  if (params.category) {
+    conditions.push(`taxonomy_category = $${paramIndex++}`);
+    values.push(params.category);
+  }
+
+  if (params.date_from) {
+    conditions.push(`auction_date >= $${paramIndex++}`);
+    values.push(params.date_from);
+  }
+
+  if (params.date_to) {
+    conditions.push(`auction_date <= $${paramIndex++}`);
+    values.push(params.date_to);
+  }
+
+  if (params.min_price !== undefined) {
+    conditions.push(`hammer_price >= $${paramIndex++}`);
+    values.push(params.min_price);
+  }
+
+  if (params.max_price !== undefined) {
+    conditions.push(`hammer_price <= $${paramIndex++}`);
+    values.push(params.max_price);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const query = `SELECT COUNT(*) as count FROM items ${whereClause}`;
+  const result = await pool.query(query, values);
+  return parseInt(result.rows[0].count);
 }
