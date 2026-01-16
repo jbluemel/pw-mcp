@@ -1,13 +1,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { getAuctionItems, getItemCount } from './db/queries.js';
-import { GetAuctionItemsInputSchema } from './schemas/types.js';
+import { listTables, describeTable, executeQuery } from './db/queries.js';
+import { DescribeTableInputSchema, QueryDatabaseInputSchema } from './schemas/types.js';
 
 const server = new Server(
   {
-    name: 'purple-wave-auction-mcp',
-    version: '1.0.0',
+    name: 'purple-wave-auction',
+    version: '2.0.0',
   },
   {
     capabilities: {
@@ -16,77 +16,122 @@ const server = new Server(
   }
 );
 
+// Register available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: 'get_auction_items',
-        description: 'List auction items with optional filters. Returns items with pricing, location, and category info. Use count_only=true for "how many" questions.',
+        name: 'list_tables',
+        description: 'List all tables available for querying. Returns the allowlisted tables that can be accessed through this MCP server.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: 'describe_table',
+        description: 'Get the schema of an allowed table, including column names, data types, and nullability. Use this to understand table structure before writing queries.',
         inputSchema: {
           type: 'object',
           properties: {
-            category: { type: 'string', description: 'Filter by taxonomy_category (e.g., Tractor, Excavator)' },
-            date_from: { type: 'string', description: 'Start date (YYYY-MM-DD)' },
-            date_to: { type: 'string', description: 'End date (YYYY-MM-DD)' },
-            min_price: { type: 'number', description: 'Minimum hammer price' },
-            max_price: { type: 'number', description: 'Maximum hammer price' },
-            limit: { type: 'number', default: 20, description: 'Number of results' },
-            offset: { type: 'number', default: 0, description: 'Offset for pagination' },
-            count_only: { type: 'boolean', default: false, description: 'Return only the count, not item details' },
+            table_name: {
+              type: 'string',
+              description: 'Name of the table to describe (must be in allowlist)',
+            },
           },
+          required: ['table_name'],
+        },
+      },
+      {
+        name: 'query_database',
+        description: 'Execute a read-only SQL query against the allowed tables. Only SELECT queries are permitted. The query will be validated to ensure it only accesses allowlisted tables.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sql: {
+              type: 'string',
+              description: 'SQL SELECT query to execute',
+            },
+          },
+          required: ['sql'],
         },
       },
     ],
   };
 });
 
+// Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name === 'get_auction_items') {
-    const args = request.params.arguments as any;
-    
-    if (args.count_only) {
-      const count = await getItemCount(args);
+  const { name, arguments: args } = request.params;
+
+  try {
+    if (name === 'list_tables') {
+      const tables = await listTables();
       return {
-        content: [{ type: 'text', text: `Total items: ${count}` }],
+        content: [{
+          type: 'text',
+          text: `Available tables:\n${tables.map(t => `  - ${t}`).join('\n')}`,
+        }],
       };
     }
-    
-    const params = GetAuctionItemsInputSchema.parse(args);
-    const items = await getAuctionItems(params);
-    
-    const formattedItems = items.map(item => {
-      return `Item ${item.item_id}:
-  Make/Model: ${item.make || ''} ${item.model || 'N/A'}
-  Category: ${item.taxonomy_category || 'N/A'}
-  Auction Date: ${item.auction_date || 'N/A'}
-  Location: ${item.item_city || ''}, ${item.item_state || ''}
-  Region: ${item.item_region_name || 'N/A'}
-  Hammer Price: $${item.hammer_price || 0}
-  Contract Price: $${item.contract_price || 0}
-  Buyer Premium: $${item.buyer_premium || 0}
-  Seller Service Fee: $${item.seller_service_fee || 0}
-  Lot Fee: $${item.lot_fee || 0}
-  Business Category: ${item.business_category || 'N/A'}
-  TSM: ${item.tsm_first_name || ''} ${item.tsm_last_name || ''}`;
-    }).join('\n\n');
-    
-    return {
-      content: [
-        {
+
+    if (name === 'describe_table') {
+      const input = DescribeTableInputSchema.parse(args);
+      const columns = await describeTable(input.table_name);
+      const formatted = columns.map(c => 
+        `  ${c.column_name}: ${c.data_type}${c.is_nullable ? ' (nullable)' : ''}`
+      ).join('\n');
+      return {
+        content: [{
           type: 'text',
-          text: `Found ${items.length} items:\n\n${formattedItems}`,
-        },
-      ],
+          text: `Table: ${input.table_name}\nColumns:\n${formatted}`,
+        }],
+      };
+    }
+
+    if (name === 'query_database') {
+      const input = QueryDatabaseInputSchema.parse(args);
+      const result = await executeQuery(input.sql);
+      
+      // Format as simple table
+      let output = `Query returned ${result.row_count} rows.\n\n`;
+      
+      if (result.row_count > 0) {
+        // Add column headers
+        output += result.columns.join(' | ') + '\n';
+        output += result.columns.map(() => '---').join(' | ') + '\n';
+        
+        // Add rows (limit to 100 for readability)
+        const displayRows = result.rows.slice(0, 100);
+        for (const row of displayRows) {
+          output += result.columns.map(col => String(row[col] ?? 'NULL')).join(' | ') + '\n';
+        }
+        
+        if (result.row_count > 100) {
+          output += `\n... and ${result.row_count - 100} more rows`;
+        }
+      }
+      
+      return {
+        content: [{ type: 'text', text: output }],
+      };
+    }
+
+    throw new Error(`Unknown tool: ${name}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      content: [{ type: 'text', text: `Error: ${message}` }],
+      isError: true,
     };
   }
-  
-  throw new Error(`Unknown tool: ${request.params.name}`);
 });
 
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Purple Wave Auction MCP server running on stdio');
+  console.error('Purple Wave Auction MCP server v2.0 running on stdio');
 }
 
 main().catch((error) => {
