@@ -1,13 +1,15 @@
 // Allowlisted tables - ONLY these tables can be accessed via MCP
 export const ALLOWED_TABLES: ReadonlySet<string> = new Set([
-  'items',
-  'weekly_metrics_summary',
-  'weekly_metrics_by_category',
-  'weekly_metrics_by_business_category',
-  'weekly_metrics_by_industry',
-  'weekly_metrics_by_region',
-  'weekly_metrics_by_district',
-  'weekly_metrics_by_territory',
+   'items',
+    'weekly_metrics_summary',
+    'weekly_metrics_by_category',
+    'weekly_metrics_by_business_category',
+    'weekly_metrics_by_industry',
+    'weekly_metrics_by_family',
+    'weekly_metrics_by_category',
+    'weekly_metrics_by_region',
+    'weekly_metrics_by_district',
+    'weekly_metrics_by_territory',
 ]);
 
 // Helper function to check if a table is allowed
